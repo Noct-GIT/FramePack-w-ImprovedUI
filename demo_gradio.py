@@ -1,3 +1,4 @@
+# <<< Start of the provided file >>>
 from diffusers_helper.hf_login import login
 
 import os
@@ -94,6 +95,7 @@ else:
     transformer.to(gpu)
 
 stream = AsyncStream()
+latest_output_path = None # <<< This was already present in the original file you sent, keeping it.
 
 outputs_folder = './outputs/'
 os.makedirs(outputs_folder, exist_ok=True)
@@ -314,38 +316,54 @@ def worker(input_image, prompt, n_prompt, seed, total_second_length, latent_wind
     stream.output_queue.push(('end', None))
     return
 
-
-def process(input_image, prompt, n_prompt, seed, total_second_length, latent_window_size, steps, cfg, gs, rs, gpu_memory_preservation, use_teacache, mp4_crf):
+# <<< MODIFIED process function definition >>>
+def process(input_image, prompt, n_prompt, seed, total_second_length, latent_window_size, steps, cfg, gs, rs, gpu_memory_preservation, use_teacache, mp4_crf, batch_count):
     global stream
     assert input_image is not None, 'No input image!'
 
-    yield None, None, '', '', gr.update(interactive=False), gr.update(interactive=True)
+    # <<< MODIFIED - Loop added here >>>
+    for i in range(batch_count):
+        # <<< MODIFIED - Initial yield added >>>
+        yield None, None, f'Starting video {i+1} of {batch_count}...', '', gr.update(interactive=False), gr.update(interactive=True)
 
-    stream = AsyncStream()
+        stream = AsyncStream() # Create a new stream for each iteration
 
-    async_run(worker, input_image, prompt, n_prompt, seed, total_second_length, latent_window_size, steps, cfg, gs, rs, gpu_memory_preservation, use_teacache, mp4_crf)
+        # <<< MODIFIED - Seed incremented >>>
+        async_run(worker, input_image, prompt, n_prompt, seed + i, total_second_length, latent_window_size, steps, cfg, gs, rs, gpu_memory_preservation, use_teacache, mp4_crf)
 
-    output_filename = None
+        # <<< MODIFIED - Output handling block moved inside the loop >>>
+        output_filename = None
+        global latest_output_path
 
-    while True:
-        flag, data = stream.output_queue.next()
+        while True:
+            flag, data = stream.output_queue.next()
 
-        if flag == 'file':
-            output_filename = data
-            yield output_filename, gr.update(), gr.update(), gr.update(), gr.update(interactive=False), gr.update(interactive=True)
+            if flag == 'file':
+                output_filename = data
+                latest_output_path = output_filename
+                yield output_filename, gr.update(), gr.update(), gr.update(), gr.update(interactive=False), gr.update(interactive=True)
 
-        if flag == 'progress':
-            preview, desc, html = data
-            yield gr.update(), gr.update(visible=True, value=preview), desc, html, gr.update(interactive=False), gr.update(interactive=True)
+            if flag == 'progress':
+                preview, desc, html = data
+                yield gr.update(), gr.update(visible=True, value=preview), desc, html, gr.update(interactive=False), gr.update(interactive=True)
 
-        if flag == 'end':
-            yield output_filename, gr.update(visible=False), gr.update(), '', gr.update(interactive=True), gr.update(interactive=False)
-            break
+            if flag == 'end':
+                break
+    # <<< MODIFIED - Loop ends here >>>
+
+    # Final yield after all loops are done
+    yield output_filename, gr.update(visible=False), gr.update(), '', gr.update(interactive=True), gr.update(interactive=False)
 
 
 def end_process():
     stream.input_queue.push('end')
 
+# vvv This function was already present in the original file you sent vvv
+def refresh_preview():
+    if latest_output_path and os.path.exists(latest_output_path):
+        return latest_output_path
+    return None
+# ^^^ This function was already present in the original file you sent ^^^
 
 quick_prompts = [
     'The girl dances gracefully, with clear movements, full of charm.',
@@ -368,6 +386,7 @@ with block:
             with gr.Row():
                 start_button = gr.Button(value="Start Generation")
                 end_button = gr.Button(value="End Generation", interactive=False)
+                refresh_button = gr.Button(value="🔄 Refresh Preview", interactive=True) # This was already present
 
             with gr.Group():
                 use_teacache = gr.Checkbox(label='Use TeaCache', value=True, info='Faster speed, but often makes hands and fingers slightly worse.')
@@ -387,6 +406,9 @@ with block:
 
                 mp4_crf = gr.Slider(label="MP4 Compression", minimum=0, maximum=100, value=16, step=1, info="Lower means better quality. 0 is uncompressed. Change to 16 if you get black outputs. ")
 
+                # <<< ADDED batch_count slider >>>
+                batch_count = gr.Slider(label="Number of Videos", minimum=1, maximum=20, value=1, step=1)
+
         with gr.Column():
             preview_image = gr.Image(label="Next Latents", height=200, visible=False)
             result_video = gr.Video(label="Finished Frames", autoplay=True, show_share_button=False, height=512, loop=True)
@@ -396,9 +418,11 @@ with block:
 
     gr.HTML('<div style="text-align:center; margin-top:20px;">Share your results and find ideas at the <a href="https://x.com/search?q=framepack&f=live" target="_blank">FramePack Twitter (X) thread</a></div>')
 
-    ips = [input_image, prompt, n_prompt, seed, total_second_length, latent_window_size, steps, cfg, gs, rs, gpu_memory_preservation, use_teacache, mp4_crf]
+    # <<< MODIFIED ips list >>>
+    ips = [input_image, prompt, n_prompt, seed, total_second_length, latent_window_size, steps, cfg, gs, rs, gpu_memory_preservation, use_teacache, mp4_crf, batch_count]
     start_button.click(fn=process, inputs=ips, outputs=[result_video, preview_image, progress_desc, progress_bar, start_button, end_button])
     end_button.click(fn=end_process)
+    refresh_button.click(fn=refresh_preview, outputs=result_video) # This was already present
 
 
 block.launch(
@@ -407,3 +431,4 @@ block.launch(
     share=args.share,
     inbrowser=args.inbrowser,
 )
+# <<< End of the provided file >>>
